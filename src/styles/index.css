@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body {
+    @apply bg-bg text-text;
+  }
+  ::selection {
+    @apply bg-accentDim;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-bg;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded;
+  }
+  :focus-visible {
+    outline: 2px solid theme("colors.accent");
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-[13px] font-semibold border border-border bg-surface2 text-text cursor-pointer transition-colors;
+  }
+  .btn:hover {
+    @apply bg-[#232D35] border-[#3A4650];
+  }
+  .btn:disabled {
+    @apply opacity-40 cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply bg-accent border-accent text-[#08141C];
+  }
+  .btn-primary:hover {
+    @apply bg-[#67B3EA];
+  }
+  .btn-danger {
+    @apply bg-transparent border-incorrect text-incorrect;
+  }
+  .btn-danger:hover {
+    @apply bg-incorrectBg;
+  }
+  .btn-sm {
+    @apply px-2.5 py-1 text-xs;
+  }
+  .card {
+    @apply bg-surface border border-borderSoft rounded-lg;
+  }
+  .input {
+    @apply bg-surface2 border border-border text-text rounded-md px-2.5 py-2 text-[13px] w-full;
+  }
+  .input:focus {
+    @apply border-accent outline-none;
+  }
+  .label {
+    @apply text-[11px] uppercase tracking-wide text-textDim font-semibold;
+  }
+  .pill {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold;
+  }
+  .bar-track {
+    @apply h-1.5 rounded-full bg-surface2 overflow-hidden border border-borderSoft;
+  }
+  .bar-fill {
+    @apply h-full rounded-full;
+  }
+  table {
+    @apply border-collapse w-full;
+  }
+  th {
+    @apply text-left text-[11px] uppercase tracking-wide text-textDim font-semibold px-2.5 py-2 border-b border-border;
+  }
+  td {
+    @apply px-2.5 py-2.5 text-[13px] border-b border-borderSoft;
+  }
+  tr:hover td {
+    @apply bg-surface2;
+  }
+  code,
+  pre,
+  .mono {
+    font-family: theme("fontFamily.mono");
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.fade-in {
+  animation: fadeIn 0.15s ease-out;
+}
