@@ -2,10 +2,15 @@ import { db } from "@/db/db";
 import type { Question, QuestionResponse } from "@/types/question";
 import type { Attempt } from "@/types/attempt";
 import type { Topic, TopicStatus, FlagReason } from "@/types/topic";
+import type { QuestionSet } from "@/types/questionSet";
 import { scoreAttempt } from "./scoring";
-import { defaultLearningState, updateLearningState } from "./spacedRepetition";
+import {
+  defaultLearningState,
+  updateLearningState,
+} from "./spacedRepetition";
 import { selectDailyQuiz } from "./dailyQuiz";
-import { nowISO, topicKeyOf } from "@/utils/id";
+import { buildQuestionSet } from "./questionSet";
+import { nowISO, topicKeyOf, uid } from "@/utils/id";
 
 export type DuplicateStrategy = "skip" | "replace" | "keep";
 
@@ -26,6 +31,7 @@ export interface FullBackup {
   bookmarks: unknown[];
   flags: unknown[];
   user_settings: unknown[];
+  question_sets: QuestionSet[];
 }
 
 const IMPORT_CHUNK_SIZE = 200;
@@ -67,6 +73,61 @@ export const Store = {
     return db.flags.toArray();
   },
 
+  async createQuestionSet(
+    name: string,
+    questionIds: string[]
+  ): Promise<QuestionSet> {
+    const set = buildQuestionSet(
+      name,
+      questionIds,
+      uid("set"),
+      nowISO()
+    );
+
+    await db.question_sets.put(set);
+
+    return set;
+  },
+
+  async allQuestionSets(): Promise<QuestionSet[]> {
+    const sets = await db.question_sets.toArray();
+
+    return sets.sort((a, b) =>
+      b.imported_at.localeCompare(a.imported_at)
+    );
+  },
+
+  async getQuestionSet(
+    id: string
+  ): Promise<QuestionSet | undefined> {
+    return db.question_sets.get(id);
+  },
+
+  async deleteQuestionSet(id: string): Promise<void> {
+    await db.question_sets.delete(id);
+  },
+
+  /**
+   * Resolves a set's question_ids to actual Question records,
+   * preserving the set's original order and skipping any since-deleted
+   * questions.
+   */
+  async getQuestionsForSet(id: string): Promise<Question[]> {
+    const set = await db.question_sets.get(id);
+
+    if (!set) return [];
+
+    const qs = await db.questions.bulkGet(set.question_ids);
+
+    return qs.filter(
+      (q): q is Question => !!q
+    );
+  },
+
+  /**
+   * Chunked, transactional import. Never silently overwrites — the caller
+   * must choose a DuplicateStrategy explicitly (spec §41, §43, §63).
+   */
   async importQuestions(
     validQuestions: Question[],
     strategy: DuplicateStrategy,
@@ -76,8 +137,15 @@ export const Store = {
     let replaced = 0;
     let skipped = 0;
 
-    for (let i = 0; i < validQuestions.length; i += IMPORT_CHUNK_SIZE) {
-      const chunk = validQuestions.slice(i, i + IMPORT_CHUNK_SIZE);
+    for (
+      let i = 0;
+      i < validQuestions.length;
+      i += IMPORT_CHUNK_SIZE
+    ) {
+      const chunk = validQuestions.slice(
+        i,
+        i + IMPORT_CHUNK_SIZE
+      );
 
       await db.transaction(
         "rw",
@@ -88,7 +156,10 @@ export const Store = {
           for (const q of chunk) {
             const exists = existingIds.has(q.id);
 
-            if (exists && (strategy === "skip" || strategy === "keep")) {
+            if (
+              exists &&
+              (strategy === "skip" || strategy === "keep")
+            ) {
               skipped++;
               continue;
             }
@@ -108,7 +179,8 @@ export const Store = {
             }
 
             const tKey = topicKeyOf(q);
-            const existingTopic = await db.topics.get(tKey);
+            const existingTopic =
+              await db.topics.get(tKey);
 
             if (!existingTopic) {
               await db.topics.put({
@@ -124,9 +196,18 @@ export const Store = {
       );
     }
 
-    return { inserted, replaced, skipped };
+    return {
+      inserted,
+      replaced,
+      skipped,
+    };
   },
 
+  /**
+   * Records an attempt and updates the associated learning state in a
+   * single transaction. Attempt history and question data are kept
+   * strictly separate (spec §11).
+   */
   async recordAttempt(params: {
     question: Question;
     quiz_session_id: string;
@@ -140,7 +221,10 @@ export const Store = {
       timeTakenSec,
     } = params;
 
-    const scored = scoreAttempt(question, selected_answers);
+    const scored = scoreAttempt(
+      question,
+      selected_answers
+    );
 
     const attempt: Attempt = {
       question_id: question.id,
@@ -163,13 +247,21 @@ export const Store = {
       db.attempts,
       db.learning_states,
       async () => {
-        const newId = await db.attempts.add(attempt);
+        const newId =
+          await db.attempts.add(attempt);
+
         attempt.attempt_id = newId as number;
 
-        let ls = await db.learning_states.get(question.id);
+        let ls =
+          await db.learning_states.get(
+            question.id
+          );
 
         if (!ls) {
-          ls = defaultLearningState(question.id, question);
+          ls = defaultLearningState(
+            question.id,
+            question
+          );
         }
 
         updateLearningState(
@@ -197,8 +289,11 @@ export const Store = {
     }
   },
 
-  async toggleBookmark(question_id: string): Promise<boolean> {
-    const existing = await db.bookmarks.get(question_id);
+  async toggleBookmark(
+    question_id: string
+  ): Promise<boolean> {
+    const existing =
+      await db.bookmarks.get(question_id);
 
     if (existing) {
       await db.bookmarks.delete(question_id);
@@ -226,7 +321,10 @@ export const Store = {
     });
   },
 
-  async buildDailyQuiz(size: number): Promise<Question[]> {
+  /** Builds today's daily quiz by reading current state and delegating to the pure selection algorithm. */
+  async buildDailyQuiz(
+    size: number
+  ): Promise<Question[]> {
     const [
       questions,
       learningStates,
@@ -250,22 +348,27 @@ export const Store = {
   },
 
   async resetSpacedRepetition(): Promise<void> {
-    const qs = await db.questions.toArray();
+    const qs =
+      await db.questions.toArray();
 
     await db.learning_states.clear();
 
     await db.learning_states.bulkPut(
-      qs.map((q) => defaultLearningState(q.id, q))
+      qs.map((q) =>
+        defaultLearningState(q.id, q)
+      )
     );
   },
 
   async resetTopicProgress(): Promise<void> {
-    const ts = await db.topics.toArray();
+    const ts =
+      await db.topics.toArray();
 
     await db.topics.bulkPut(
       ts.map((t) => ({
         ...t,
-        status: "Not Started" as TopicStatus,
+        status:
+          "Not Started" as TopicStatus,
       }))
     );
   },
@@ -278,11 +381,17 @@ export const Store = {
   async resetAll(): Promise<void> {
     await db.transaction(
       "rw",
-      db.questions,
-      db.attempts,
-      db.quiz_sessions,
-      db.learning_states,
-      db.topics,
+      [
+        db.questions,
+        db.attempts,
+        db.quiz_sessions,
+        db.learning_states,
+        db.topics,
+        db.bookmarks,
+        db.flags,
+        db.user_settings,
+        db.question_sets,
+      ],
       async () => {
         await Promise.all([
           db.questions.clear(),
@@ -290,15 +399,13 @@ export const Store = {
           db.quiz_sessions.clear(),
           db.learning_states.clear(),
           db.topics.clear(),
+          db.bookmarks.clear(),
+          db.flags.clear(),
+          db.user_settings.clear(),
+          db.question_sets.clear(),
         ]);
       }
     );
-
-    await Promise.all([
-      db.bookmarks.clear(),
-      db.flags.clear(),
-      db.user_settings.clear(),
-    ]);
   },
 
   async fullBackup(): Promise<FullBackup> {
@@ -311,6 +418,7 @@ export const Store = {
       bookmarks,
       flags,
       user_settings,
+      question_sets,
     ] = await Promise.all([
       db.questions.toArray(),
       db.attempts.toArray(),
@@ -320,6 +428,7 @@ export const Store = {
       db.bookmarks.toArray(),
       db.flags.toArray(),
       db.user_settings.toArray(),
+      db.question_sets.toArray(),
     ]);
 
     return {
@@ -333,6 +442,7 @@ export const Store = {
       bookmarks,
       flags,
       user_settings,
+      question_sets,
     };
   },
 
@@ -341,14 +451,22 @@ export const Store = {
   ): Promise<void> {
     await db.transaction(
       "rw",
-      db.questions,
-      db.attempts,
-      db.quiz_sessions,
-      db.learning_states,
-      db.topics,
+      [
+        db.questions,
+        db.attempts,
+        db.quiz_sessions,
+        db.learning_states,
+        db.topics,
+        db.bookmarks,
+        db.flags,
+        db.user_settings,
+        db.question_sets,
+      ],
       async () => {
         if (backup.questions) {
-          await db.questions.bulkPut(backup.questions);
+          await db.questions.bulkPut(
+            backup.questions
+          );
         }
 
         if (backup.attempts) {
@@ -373,30 +491,40 @@ export const Store = {
         }
 
         if (backup.topics) {
-          await db.topics.bulkPut(backup.topics);
+          await db.topics.bulkPut(
+            backup.topics
+          );
+        }
+
+        if (backup.bookmarks) {
+          await db.bookmarks.bulkPut(
+            backup.bookmarks as any
+          );
+        }
+
+        if (backup.flags) {
+          await db.flags.bulkPut(
+            (backup.flags as any[]).map(
+              (f) => ({
+                ...f,
+                id: undefined,
+              })
+            )
+          );
+        }
+
+        if (backup.user_settings) {
+          await db.user_settings.bulkPut(
+            backup.user_settings as any
+          );
+        }
+
+        if (backup.question_sets) {
+          await db.question_sets.bulkPut(
+            backup.question_sets
+          );
         }
       }
     );
-
-    if (backup.bookmarks) {
-      await db.bookmarks.bulkPut(
-        backup.bookmarks as any
-      );
-    }
-
-    if (backup.flags) {
-      await db.flags.bulkPut(
-        (backup.flags as any[]).map((f) => ({
-          ...f,
-          id: undefined,
-        }))
-      );
-    }
-
-    if (backup.user_settings) {
-      await db.user_settings.bulkPut(
-        backup.user_settings as any
-      );
-    }
   },
 };
