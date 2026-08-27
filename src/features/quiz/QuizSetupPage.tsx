@@ -17,6 +17,7 @@ import {
 } from "@/services/analytics";
 import { shuffle } from "@/utils/id";
 import type { QuizSetup } from "./QuizRunner";
+import { randomizeQuestionOptions } from "@/services/quizPreparation";
 
 interface ModeDef {
   key: QuizMode;
@@ -24,187 +25,119 @@ interface ModeDef {
   desc: string;
 }
 
-// function shuffleQuestionOptions(question: Question): Question {
-//   if (
-//     !question.options ||
-//     question.options.length < 2
-//   ) {
-//     return question;
-//   }
-
-//   return {
-//     ...question,
-//     options: shuffle(question.options),
-//   };
-// }
-
-function shuffleWithPositionBalance(
+function shuffleQuestionOptions(
   questions: Question[]
 ): Question[] {
-  const positions = ["A", "B", "C", "D"];
-
-  // Track how many times each position has been used.
-  const counts: Record<string, number> = {
-    A: 0,
-    B: 0,
-    C: 0,
-    D: 0,
-  };
-
-  return questions.map((question, questionIndex) => {
+  return questions.map((question) => {
     const options = question.options;
 
-    // No usable options → leave untouched.
+        console.log(
+      "[OPTION DEBUG]",
+      question.id,
+      question.question_type,
+      options?.map((o) => ({
+        id: o.id,
+        is_correct: o.is_correct,
+        type: typeof o.is_correct,
+      }))
+    );
+
     if (!options || options.length < 2) {
       return question;
     }
 
-    // Only balance normal single-correct option questions.
     if (
-      question.question_type !== "single_choice" &&
-      question.question_type !== "best_answer" &&
-      question.question_type !== "scenario" &&
-      question.question_type !== "code_output" &&
-      question.question_type !== "code_completion"
+      question.question_type === "ordering" ||
+      question.question_type === "matching"
     ) {
       return question;
     }
 
-    const correct = options.filter(
-      (option) => option.is_correct
-    );
+    // const correct = options.filter(
+    //   (option) => option.is_correct
+    // );
 
-    const incorrect = options.filter(
-      (option) => !option.is_correct
-    );
+    // const incorrect = options.filter(
+    //   (option) => !option.is_correct
+    // );
 
-    if (correct.length !== 1) {
-      return question;
-    }
+const isCorrect = (
+  value: unknown
+): boolean => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return (
+      value.trim().toLowerCase() ===
+      "true"
+    );
+  }
+
+  return false;
+};
+
+const correct = options.filter(
+  (option) =>
+    isCorrect(
+      option.is_correct as unknown
+    )
+);
+
+const incorrect = options.filter(
+  (option) =>
+    !isCorrect(
+      option.is_correct as unknown
+    )
+);
 
     /*
-     * Give underused positions higher probability.
-     *
-     * This is deliberately NOT exact balancing.
-     * The slight randomness means a quiz can naturally end up
-     * 6/5/4/5, 7/4/5/4, etc. instead of always 5/5/5/5.
+     * Exactly one correct answer:
+     * explicitly place it at a random valid position.
      */
-    const weightedPositions = positions.map(
-      (position) => {
-        const usage = counts[position];
-
-        // Higher weight for less-used positions.
-        // The floor keeps every position possible.
-        const weight =
-          1 / (1 + usage * 0.65);
-
-        return {
-          position,
-          weight,
-        };
-      }
-    );
-
-    /*
-     * Avoid obvious consecutive repeats.
-     * We make the immediately previous position less likely,
-     * but do not make it impossible.
-     */
-    const previousPosition =
-      questionIndex > 0
-        ? positions.find(
-            (p) =>
-              counts[p] ===
-              Math.max(...Object.values(counts))
-          )
-        : undefined;
-
-    if (previousPosition) {
-      const previous =
-        weightedPositions.find(
-          (p) =>
-            p.position ===
-            previousPosition
-        );
-
-      if (previous) {
-        previous.weight *= 0.35;
-      }
-    }
-
-    // Weighted random selection.
-    const totalWeight =
-      weightedPositions.reduce(
-        (sum, item) =>
-          sum + item.weight,
-        0
+    if (correct.length === 1) {
+      const shuffledIncorrect = shuffle(
+        incorrect
       );
 
-    let random =
-      Math.random() * totalWeight;
-
-    let targetPosition =
-      positions[0];
-
-    for (const item of weightedPositions) {
-      random -= item.weight;
-
-      if (random <= 0) {
-        targetPosition = item.position;
-        break;
-      }
-    }
-
-    counts[targetPosition]++;
-
-    const targetIndex =
-      positions.indexOf(
-        targetPosition
+      const targetIndex = Math.floor(
+        Math.random() * options.length
       );
 
-    // Shuffle incorrect answers normally.
-    const shuffledIncorrect =
-      incorrect.slice();
+      const randomizedOptions =
+        shuffledIncorrect.slice();
 
-    for (
-      let i =
-        shuffledIncorrect.length - 1;
-      i > 0;
-      i--
-    ) {
-      const j = Math.floor(
-        Math.random() * (i + 1)
-      );
-
-      [
-        shuffledIncorrect[i],
-        shuffledIncorrect[j],
-      ] = [
-        shuffledIncorrect[j],
-        shuffledIncorrect[i],
-      ];
-    }
-
-    // Insert the correct option into the chosen
-    // visual position.
-    const shuffledOptions =
-      shuffledIncorrect.slice();
-
-    shuffledOptions.splice(
-      Math.min(
+      randomizedOptions.splice(
         targetIndex,
-        shuffledOptions.length
-      ),
-      0,
-      correct[0]
-    );
+        0,
+        correct[0]
+      );
 
-    return {
-      ...question,
-      options: shuffledOptions,
-    };
+      return {
+        ...question,
+        options: randomizedOptions,
+      };
+    }
+
+    /*
+     * Multiple correct answers:
+     * shuffle the whole option array.
+     */
+    if (
+      question.question_type ===
+      "multiple_choice"
+    ) {
+      return {
+        ...question,
+        options: shuffle(options),
+      };
+    }
+
+    return question;
   });
 }
+
 const QUIZ_MODES: ModeDef[] = [
   {
     key: "quick",
@@ -487,7 +420,7 @@ export function QuizSetupPage({
     }
 
 const randomizedQuestions =
-  shuffleWithPositionBalance(selected);
+  randomizeQuestionOptions(selected);
 
 onStart({
   mode,

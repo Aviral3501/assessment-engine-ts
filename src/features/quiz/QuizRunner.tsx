@@ -93,6 +93,8 @@ export function QuizRunner({
   const [queueOpen, setQueueOpen] =
     useState(true);
 
+  const [debugOpen, setDebugOpen] = useState(false);
+
   const [quizBehavior, setQuizBehavior] =
     useState<QuizBehavior>(() =>
       initialQuizBehavior(
@@ -140,6 +142,103 @@ export function QuizRunner({
     attemptsLog.find(
       (a) => a.question_id === q.id
     );
+
+  
+const answerPositionStats = (() => {
+  const single = {
+    A: 0,
+    B: 0,
+    C: 0,
+    D: 0,
+  };
+
+  const multiple = {
+    A: 0,
+    B: 0,
+    C: 0,
+    D: 0,
+  };
+
+  let singleCorrectQuestions = 0;
+  let multipleChoiceQuestions = 0;
+  let multipleCorrectOptions = 0;
+
+  attemptsLog.forEach((attempt) => {
+    const question =
+      session.questions.find(
+        (qq) => qq.id === attempt.question_id
+      );
+
+    if (!question?.options) {
+      return;
+    }
+
+    const correctPositions =
+      question.options
+        .map((option, index) =>
+          option.is_correct ? index : -1
+        )
+        .filter((index) => index >= 0);
+
+    /*
+     * Multiple choice.
+     */
+    if (
+      question.question_type ===
+        "multiple_choice" &&
+      correctPositions.length > 0
+    ) {
+      multipleChoiceQuestions++;
+
+      correctPositions.forEach(
+        (position) => {
+          if (position === 0) {
+            multiple.A++;
+          } else if (position === 1) {
+            multiple.B++;
+          } else if (position === 2) {
+            multiple.C++;
+          } else if (position === 3) {
+            multiple.D++;
+          }
+
+          multipleCorrectOptions++;
+        }
+      );
+
+      return;
+    }
+
+    /*
+     * Everything else with exactly one
+     * correct option.
+     */
+    if (correctPositions.length === 1) {
+      singleCorrectQuestions++;
+
+      const position =
+        correctPositions[0];
+
+      if (position === 0) {
+        single.A++;
+      } else if (position === 1) {
+        single.B++;
+      } else if (position === 2) {
+        single.C++;
+      } else if (position === 3) {
+        single.D++;
+      }
+    }
+  });
+
+  return {
+    single,
+    multiple,
+    singleCorrectQuestions,
+    multipleChoiceQuestions,
+    multipleCorrectOptions,
+  };
+})();
 
   const isRevealed =
     quizBehavior !== "assessment" &&
@@ -914,6 +1013,121 @@ export function QuizRunner({
               }
             )}
           </div>
+
+<div className="m-2 p-2">
+  { (
+    <div className="card p-3.5 mb-3">
+      <button
+        type="button"
+        className="flex items-center justify-between w-full bg-transparent border-none p-0 cursor-pointer text-left"
+        onClick={() =>
+          setDebugOpen((open) => !open)
+        }
+      >
+        <span className="text-[13px] font-bold">
+          Answer Position Debug
+        </span>
+
+        <span className="text-[12px] text-textMuted">
+          {debugOpen ? "Hide" : "Show"}
+        </span>
+      </button>
+
+      {debugOpen && (
+        <div className="mt-3">
+          <div className="text-[11px] text-textMuted mb-2">
+            Single-correct questions
+          </div>
+
+          <div className="grid grid-cols-4 gap-2 mb-3">
+            {(
+              ["A", "B", "C", "D"] as const
+            ).map((position) => (
+              <div
+                key={`single-${position}`}
+                className="text-center p-2 rounded-md"
+                style={{
+                  background: "#1C242B",
+                  border:
+                    "1px solid #29333B",
+                }}
+              >
+                <div className="text-[11px] text-textMuted">
+                  {position}
+                </div>
+
+                <div className="text-lg font-bold">
+                  {
+                    answerPositionStats
+                      .single[position]
+                  }
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-[11px] text-textMuted mb-2">
+            Multiple-choice correct-option positions
+          </div>
+
+          <div className="grid grid-cols-4 gap-2">
+            {(
+              ["A", "B", "C", "D"] as const
+            ).map((position) => (
+              <div
+                key={`multiple-${position}`}
+                className="text-center p-2 rounded-md"
+                style={{
+                  background: "#1C242B",
+                  border:
+                    "1px solid #29333B",
+                }}
+              >
+                <div className="text-[11px] text-textMuted">
+                  {position}
+                </div>
+
+                <div className="text-lg font-bold">
+                  {
+                    answerPositionStats
+                      .multiple[position]
+                  }
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-[11px] text-textDim mt-3">
+            Single-correct:{" "}
+            {
+              answerPositionStats
+                .singleCorrectQuestions
+            }
+            {" · "}
+            Multiple-choice questions:{" "}
+            {
+              answerPositionStats
+                .multipleChoiceQuestions
+            }
+            {" · "}
+            Multiple correct options:{" "}
+            {
+              answerPositionStats
+                .multipleCorrectOptions
+            }
+            {" · "}
+            Total attempted:{" "}
+            {attemptsLog.length}
+          </div>
+        </div>
+      )}
+    </div>
+  )}
+
+  <div className="text-[11px] text-textDim mt-2">
+    Total attempted: {attemptsLog.length}
+  </div>
+</div>
 
           <div className="flex gap-3 text-[11px] text-textMuted mt-3 flex-wrap">
             <LegendDot

@@ -4,6 +4,7 @@ import { Store } from "@/services/store";
 import { safeAccuracy } from "@/services/analytics";
 import { EmptyState, Pct } from "@/components/Primitives";
 import type { QuizSetup } from "@/features/quiz/QuizRunner";
+import { randomizeQuestionOptions } from "@/services/quizPreparation";
 
 export function SetsPage({
   onSolve,
@@ -77,23 +78,26 @@ export function SetsPage({
     setLoading(false);
   }
 
-  async function solveSet(set: QuestionSet) {
-    const questions =
-      await Store.getQuestionsForSet(set.id);
+async function solveSet(set: QuestionSet) {
+  const questions =
+    await Store.getQuestionsForSet(set.id);
 
-    if (!questions.length) {
-      window.alert(
-        "This set's questions are no longer in the question bank."
-      );
-      return;
-    }
-
-    onSolve({
-      mode: "set",
-      questions,
-      revealMode: "immediate",
-    });
+  if (!questions.length) {
+    window.alert(
+      "This set's questions are no longer in the question bank."
+    );
+    return;
   }
+
+  const randomizedQuestions =
+    randomizeQuestionOptions(questions);
+
+  onSolve({
+    mode: "set",
+    questions: randomizedQuestions,
+    revealMode: "immediate",
+  });
+}
 
   async function removeSet(set: QuestionSet) {
     if (
