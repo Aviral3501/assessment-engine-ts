@@ -24,19 +24,19 @@ interface ModeDef {
   desc: string;
 }
 
-function shuffleQuestionOptions(question: Question): Question {
-  if (
-    !question.options ||
-    question.options.length < 2
-  ) {
-    return question;
-  }
+// function shuffleQuestionOptions(question: Question): Question {
+//   if (
+//     !question.options ||
+//     question.options.length < 2
+//   ) {
+//     return question;
+//   }
 
-  return {
-    ...question,
-    options: shuffle(question.options),
-  };
-}
+//   return {
+//     ...question,
+//     options: shuffle(question.options),
+//   };
+// }
 
 function shuffleWithPositionBalance(
   questions: Question[]
