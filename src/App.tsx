@@ -20,6 +20,7 @@ import type {
   Attempt,
   QuizSession,
 } from "@/types/attempt";
+import { enableDevToolsProtection } from "@/utils/devtoolsProtection";
 
 export type PageKey =
   | "dashboard"
@@ -70,6 +71,10 @@ export default function App() {
   useEffect(() => {
     refreshCounts();
   }, [refreshKey]);
+
+  useEffect(() => {
+  return enableDevToolsProtection();
+}, []);
 
   async function init() {
     const n =
