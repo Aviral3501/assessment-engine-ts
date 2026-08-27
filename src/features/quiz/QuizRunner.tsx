@@ -35,6 +35,11 @@ interface Props {
   ) => void;
 }
 
+type QuizBehavior =
+  | "learn"
+  | "feedback"
+  | "assessment";
+
 const RESULT_COLOR: Record<
   ResultState,
   { bg: string; border: string }
@@ -57,23 +62,47 @@ const RESULT_COLOR: Record<
   },
 };
 
+function initialQuizBehavior(
+  revealMode: AnswerRevealMode
+): QuizBehavior {
+  return revealMode === "immediate"
+    ? "learn"
+    : "assessment";
+}
+
 export function QuizRunner({
   session,
   onFinish,
 }: Props) {
   const [idx, setIdx] = useState(0);
+
   const [responses, setResponses] =
     useState<
       Record<string, QuestionResponse>
     >({});
+
   const [revealed, setRevealed] =
     useState<Record<string, boolean>>({});
+
   const [attemptsLog, setAttemptsLog] =
     useState<Attempt[]>([]);
+
   const [bookmarks, setBookmarks] =
     useState<Set<string>>(new Set());
+
   const [queueOpen, setQueueOpen] =
     useState(true);
+
+  const [quizBehavior, setQuizBehavior] =
+    useState<QuizBehavior>(() =>
+      initialQuizBehavior(
+        session.revealMode
+      )
+    );
+
+  const [showExplanation, setShowExplanation] =
+    useState(true);
+
   const [startTime] =
     useState(Date.now());
 
@@ -107,15 +136,14 @@ export function QuizRunner({
 
   const response = responses[q.id];
 
-  const isRevealed =
-    session.revealMode === "immediate"
-      ? !!revealed[q.id]
-      : false;
-
   const currentAttempt =
     attemptsLog.find(
       (a) => a.question_id === q.id
     );
+
+  const isRevealed =
+    quizBehavior !== "assessment" &&
+    !!revealed[q.id];
 
   function setResponse(
     val: QuestionResponse
@@ -127,15 +155,16 @@ export function QuizRunner({
   }
 
   /**
-   * Records the current question's attempt when
-   * using end-of-quiz reveal mode and the question
-   * has not already been recorded.
+   * Records the current question when using
+   * assessment mode and navigating away from it.
    */
-  async function recordIfNeeded(
+  async function recordAssessmentIfNeeded(
     forQuestion: Question,
     forResponse: QuestionResponse
   ): Promise<Attempt | null> {
-    if (session.revealMode !== "end") {
+    if (
+      quizBehavior !== "assessment"
+    ) {
       return null;
     }
 
@@ -173,55 +202,33 @@ export function QuizRunner({
     return attempt;
   }
 
-  async function goTo(
-    newIdx: number
-  ) {
+  /**
+   * Records and reveals the current question
+   * for Learn and Feedback modes.
+   */
+  async function checkAnswer(): Promise<
+    Attempt | null
+  > {
     if (
-      newIdx < 0 ||
-      newIdx >= total ||
-      newIdx === idx
-    ) {
-      return;
-    }
-
-    await recordIfNeeded(
-      q,
-      response
-    );
-
-    setIdx(newIdx);
-  }
-
-  function goPrev() {
-    void goTo(idx - 1);
-  }
-
-  async function goNext() {
-    const newlyRecorded =
-      await recordIfNeeded(
-        q,
-        response
-      );
-
-    if (isLast) {
-      await finish(
-        newlyRecorded
-          ? [...attemptsLog, newlyRecorded]
-          : attemptsLog
-      );
-      return;
-    }
-
-    setIdx((i) => i + 1);
-  }
-
-  async function submitAnswer() {
-    if (
-      session.revealMode !==
-        "immediate" ||
+      quizBehavior === "assessment" ||
       revealed[q.id]
     ) {
-      return;
+      return currentAttempt ?? null;
+    }
+
+    const existing =
+      attemptsLog.find(
+        (a) =>
+          a.question_id === q.id
+      );
+
+    if (existing) {
+      setRevealed((r) => ({
+        ...r,
+        [q.id]: true,
+      }));
+
+      return existing;
     }
 
     const timeTaken = Math.round(
@@ -248,6 +255,109 @@ export function QuizRunner({
       ...r,
       [q.id]: true,
     }));
+
+    return attempt;
+  }
+
+  async function goTo(
+    newIdx: number
+  ) {
+    if (
+      newIdx < 0 ||
+      newIdx >= total ||
+      newIdx === idx
+    ) {
+      return;
+    }
+
+    await recordAssessmentIfNeeded(
+      q,
+      response
+    );
+
+    setIdx(newIdx);
+  }
+
+  function goPrev() {
+    void goTo(idx - 1);
+  }
+
+  async function goNext() {
+    /*
+     * Learn:
+     * First click checks the answer.
+     * Second click moves to the next question.
+     */
+    if (quizBehavior === "learn") {
+      if (!revealed[q.id]) {
+        await checkAnswer();
+        return;
+      }
+
+      if (isLast) {
+        await finish();
+        return;
+      }
+
+      setIdx((i) => i + 1);
+      return;
+    }
+
+    /*
+     * Feedback:
+     * First click checks the answer.
+     * Second click moves to the next question.
+     */
+    if (quizBehavior === "feedback") {
+      if (!revealed[q.id]) {
+        await checkAnswer();
+        return;
+      }
+
+      if (isLast) {
+        await finish();
+        return;
+      }
+
+      setIdx((i) => i + 1);
+      return;
+    }
+
+    /*
+     * Assessment:
+     * Navigation records the attempt but never
+     * reveals correctness.
+     */
+    const newlyRecorded =
+      await recordAssessmentIfNeeded(
+        q,
+        response
+      );
+
+    if (isLast) {
+      await finish(
+        newlyRecorded
+          ? [
+              ...attemptsLog,
+              newlyRecorded,
+            ]
+          : attemptsLog
+      );
+      return;
+    }
+
+    setIdx((i) => i + 1);
+  }
+
+  async function submitAnswer() {
+    if (
+      quizBehavior !== "learn" ||
+      revealed[q.id]
+    ) {
+      return;
+    }
+
+    await checkAnswer();
   }
 
   async function finish(
@@ -255,17 +365,20 @@ export function QuizRunner({
   ) {
     const correct =
       finalAttempts.filter(
-        (a) => a.result === "correct"
+        (a) =>
+          a.result === "correct"
       ).length;
 
     const partial =
       finalAttempts.filter(
-        (a) => a.result === "partial"
+        (a) =>
+          a.result === "partial"
       ).length;
 
     const incorrect =
       finalAttempts.filter(
-        (a) => a.result === "incorrect"
+        (a) =>
+          a.result === "incorrect"
       ).length;
 
     const sessionRecord: QuizSession = {
@@ -353,109 +466,125 @@ export function QuizRunner({
     }
   }
 
-  // Left/Right arrow key navigation.
-  // Ignore keyboard navigation while typing
-  // inside form fields.
-useEffect(() => {
-  function onKeyDown(e: KeyboardEvent) {
-    /*
-     * Arrow keys belong to the quiz UI.
-     * Do not allow the browser, radio buttons, checkboxes,
-     * selects, or scrollable elements to handle them.
-     */
-    if (
-      e.key !== "ArrowLeft" &&
-      e.key !== "ArrowRight" &&
-      e.key !== "ArrowUp" &&
-      e.key !== "ArrowDown"
+  /*
+   * Global quiz keyboard controls.
+   *
+   * Left / Right:
+   *   previous / next question
+   *
+   * Up / Down:
+   *   move through visible answer options
+   */
+  useEffect(() => {
+    function onKeyDown(
+      e: KeyboardEvent
     ) {
-      return;
-    }
+      if (
+        e.key !== "ArrowLeft" &&
+        e.key !== "ArrowRight" &&
+        e.key !== "ArrowUp" &&
+        e.key !== "ArrowDown"
+      ) {
+        return;
+      }
 
-    e.preventDefault();
-    e.stopPropagation();
+      e.preventDefault();
+      e.stopPropagation();
 
-    if (e.key === "ArrowLeft") {
-      void goPrev();
-      return;
-    }
+      if (
+        e.key === "ArrowLeft"
+      ) {
+        void goPrev();
+        return;
+      }
 
-    if (e.key === "ArrowRight") {
-      void goNext();
-      return;
-    }
+      if (
+        e.key === "ArrowRight"
+      ) {
+        void goNext();
+        return;
+      }
 
-    /*
-     * Up / Down:
-     * Move through the answer options.
-     *
-     * We intentionally use the DOM focus state rather than
-     * relying on the browser's native radio/checkbox behavior.
-     */
-    const optionElements = Array.from(
-      document.querySelectorAll<HTMLElement>(
-        `[data-question-options="${q.id}"] [data-question-option]`
-      )
-    );
-
-    if (!optionElements.length) {
-      return;
-    }
-
-    const activeElement =
-      document.activeElement as HTMLElement | null;
-
-    let currentIndex = optionElements.indexOf(
-      activeElement as HTMLElement
-    );
-
-    /*
-     * If focus isn't currently on an option,
-     * start at the first/last option depending on direction.
-     */
-    if (currentIndex === -1) {
-      currentIndex =
-        e.key === "ArrowDown"
-          ? -1
-          : optionElements.length;
-    }
-
-    const nextIndex =
-      e.key === "ArrowDown"
-        ? Math.min(
-            currentIndex + 1,
-            optionElements.length - 1
+      const optionElements =
+        Array.from(
+          document.querySelectorAll<HTMLElement>(
+            `[data-question-options="${q.id}"] [data-question-option]`
           )
-        : Math.max(
-            currentIndex - 1,
-            0
-          );
+        );
 
-    optionElements[nextIndex]?.focus();
-  }
+      if (!optionElements.length) {
+        return;
+      }
 
-  window.addEventListener(
-    "keydown",
-    onKeyDown,
-    true
-  );
+      const activeElement =
+        document.activeElement as HTMLElement | null;
 
-  return () => {
-    window.removeEventListener(
+      let currentIndex =
+        optionElements.indexOf(
+          activeElement as HTMLElement
+        );
+
+      if (currentIndex === -1) {
+        currentIndex =
+          e.key === "ArrowDown"
+            ? -1
+            : optionElements.length;
+      }
+
+      const nextIndex =
+        e.key === "ArrowDown"
+          ? Math.min(
+              currentIndex + 1,
+              optionElements.length - 1
+            )
+          : Math.max(
+              currentIndex - 1,
+              0
+            );
+
+      optionElements[
+        nextIndex
+      ]?.focus();
+    }
+
+    window.addEventListener(
       "keydown",
       onKeyDown,
       true
     );
-  };
-}, [q.id, goNext, goPrev]);
 
-  const nextLabel = isLast
-    ? "Finish Quiz"
-    : session.revealMode ===
-          "immediate" &&
-        !isRevealed
-      ? "Skip →"
-      : "Next →";
+    return () => {
+      window.removeEventListener(
+        "keydown",
+        onKeyDown,
+        true
+      );
+    };
+  });
+
+  const primaryLabel =
+    quizBehavior === "learn"
+      ? !isRevealed
+        ? "Submit Answer"
+        : isLast
+          ? "Finish Quiz"
+          : "Next →"
+      : quizBehavior === "feedback"
+        ? !isRevealed
+          ? "Check Answer"
+          : isLast
+            ? "Finish Quiz"
+            : "Next →"
+        : isLast
+          ? "Finish Quiz"
+          : "Next →";
+
+  const modeDescription =
+    quizBehavior === "learn"
+      ? "Submit each answer and study the explanation."
+      : quizBehavior === "feedback"
+        ? "Check correctness before moving on."
+        : "Complete the quiz without feedback until the end.";
 
   return (
     <div className="fade-in flex gap-5 items-start">
@@ -533,8 +662,63 @@ useEffect(() => {
             }
             title="Next (→)"
           >
-            {nextLabel}
+            {primaryLabel}
           </button>
+        </div>
+
+        <div className="card p-3.5 mb-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div>
+              <div className="label mb-1">
+                Quiz Mode
+              </div>
+
+              <select
+                className="input"
+                value={quizBehavior}
+                onChange={(e) =>
+                  setQuizBehavior(
+                    e.target
+                      .value as QuizBehavior
+                  )
+                }
+              >
+                <option value="learn">
+                  Learn
+                </option>
+
+                <option value="feedback">
+                  Feedback
+                </option>
+
+                <option value="assessment">
+                  Assessment
+                </option>
+              </select>
+            </div>
+
+            <button
+              className="btn"
+              type="button"
+              onClick={() =>
+                setShowExplanation(
+                  (v) => !v
+                )
+              }
+              style={{
+                marginTop: 18,
+              }}
+            >
+              Explanation:{" "}
+              {showExplanation
+                ? "ON"
+                : "OFF"}
+            </button>
+
+            <div className="text-[11.5px] text-textMuted flex-1 min-w-[220px]">
+              {modeDescription}
+            </div>
+          </div>
         </div>
 
         <div className="flex gap-2 mb-2.5 flex-wrap">
@@ -591,9 +775,9 @@ useEffect(() => {
             />
           </div>
 
-          {!isRevealed &&
-            session.revealMode ===
-              "immediate" && (
+          {quizBehavior ===
+            "learn" &&
+            !isRevealed && (
               <button
                 className="btn btn-primary mt-4.5"
                 onClick={
@@ -604,12 +788,28 @@ useEffect(() => {
               </button>
             )}
 
+          {quizBehavior ===
+            "feedback" &&
+            !isRevealed && (
+              <button
+                className="btn btn-primary mt-4.5"
+                onClick={() =>
+                  void checkAnswer()
+                }
+              >
+                Check Answer
+              </button>
+            )}
+
           {isRevealed &&
             currentAttempt && (
               <AnswerReview
                 question={q}
                 attempt={
                   currentAttempt
+                }
+                showExplanation={
+                  showExplanation
                 }
               />
             )}
@@ -655,7 +855,10 @@ useEffect(() => {
                 const colors =
                   a
                     ? RESULT_COLOR[
-                        a.result
+                        quizBehavior ===
+                          "assessment"
+                          ? "unanswered"
+                          : a.result
                       ]
                     : RESULT_COLOR.unanswered;
 
@@ -668,7 +871,9 @@ useEffect(() => {
                     title={`Question ${
                       i + 1
                     }${
-                      a
+                      a &&
+                      quizBehavior !==
+                        "assessment"
                         ? ` — ${a.result}`
                         : ""
                     }`}
@@ -676,11 +881,13 @@ useEffect(() => {
                     style={{
                       background:
                         colors.bg,
+
                       border: `1.5px solid ${
                         isCurrent
                           ? "#4FA3E3"
                           : colors.border
                       }`,
+
                       boxShadow:
                         isCurrent
                           ? "0 0 0 1px #4FA3E3"
