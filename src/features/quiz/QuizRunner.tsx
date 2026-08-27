@@ -356,50 +356,98 @@ export function QuizRunner({
   // Left/Right arrow key navigation.
   // Ignore keyboard navigation while typing
   // inside form fields.
-  useEffect(() => {
-    function onKeyDown(
-      e: KeyboardEvent
+useEffect(() => {
+  function onKeyDown(e: KeyboardEvent) {
+    /*
+     * Arrow keys belong to the quiz UI.
+     * Do not allow the browser, radio buttons, checkboxes,
+     * selects, or scrollable elements to handle them.
+     */
+    if (
+      e.key !== "ArrowLeft" &&
+      e.key !== "ArrowRight" &&
+      e.key !== "ArrowUp" &&
+      e.key !== "ArrowDown"
     ) {
-      const el =
-        e.target as
-          | HTMLElement
-          | null;
-
-      const tag = el?.tagName;
-
-      if (
-        tag === "INPUT" ||
-        tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        el?.isContentEditable
-      ) {
-        return;
-      }
-
-      if (
-        e.key === "ArrowRight"
-      ) {
-        e.preventDefault();
-        void goNext();
-      } else if (
-        e.key === "ArrowLeft"
-      ) {
-        e.preventDefault();
-        goPrev();
-      }
+      return;
     }
 
-    window.addEventListener(
-      "keydown",
-      onKeyDown
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.key === "ArrowLeft") {
+      void goPrev();
+      return;
+    }
+
+    if (e.key === "ArrowRight") {
+      void goNext();
+      return;
+    }
+
+    /*
+     * Up / Down:
+     * Move through the answer options.
+     *
+     * We intentionally use the DOM focus state rather than
+     * relying on the browser's native radio/checkbox behavior.
+     */
+    const optionElements = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        `[data-question-options="${q.id}"] [data-question-option]`
+      )
     );
 
-    return () =>
-      window.removeEventListener(
-        "keydown",
-        onKeyDown
-      );
-  });
+    if (!optionElements.length) {
+      return;
+    }
+
+    const activeElement =
+      document.activeElement as HTMLElement | null;
+
+    let currentIndex = optionElements.indexOf(
+      activeElement as HTMLElement
+    );
+
+    /*
+     * If focus isn't currently on an option,
+     * start at the first/last option depending on direction.
+     */
+    if (currentIndex === -1) {
+      currentIndex =
+        e.key === "ArrowDown"
+          ? -1
+          : optionElements.length;
+    }
+
+    const nextIndex =
+      e.key === "ArrowDown"
+        ? Math.min(
+            currentIndex + 1,
+            optionElements.length - 1
+          )
+        : Math.max(
+            currentIndex - 1,
+            0
+          );
+
+    optionElements[nextIndex]?.focus();
+  }
+
+  window.addEventListener(
+    "keydown",
+    onKeyDown,
+    true
+  );
+
+  return () => {
+    window.removeEventListener(
+      "keydown",
+      onKeyDown,
+      true
+    );
+  };
+}, [q.id, goNext, goPrev]);
 
   const nextLabel = isLast
     ? "Finish Quiz"

@@ -13,7 +13,10 @@ export function QuestionRenderer({ question, response, setResponse, disabled }: 
 
   if (type === "single_choice" || type === "best_answer" || type === "true_false") {
     return (
-      <div className="flex flex-col gap-2">
+     <div
+  className="flex flex-col gap-2"
+  data-question-options={question.id}
+>
         {opts.map((o) => {
           const active = String(response) === String(o.id);
           return (
@@ -22,14 +25,15 @@ export function QuestionRenderer({ question, response, setResponse, disabled }: 
               className="flex gap-2.5 items-start px-3 py-2.5 rounded-md border cursor-pointer"
               style={{ borderColor: active ? "#4FA3E3" : "#29333B", background: active ? "#1C242B" : "transparent" }}
             >
-              <input
-                type="radio"
-                name={question.id}
-                disabled={disabled}
-                checked={active}
-                onChange={() => setResponse(o.id)}
-                className="mt-0.5"
-              />
+<input
+  type="radio"
+  name={question.id}
+  disabled={disabled}
+  checked={active}
+  onChange={() => setResponse(o.id)}
+  className="mt-0.5"
+  data-question-option
+/>
               <span className="text-sm">{o.text}</span>
             </label>
           );
@@ -41,7 +45,10 @@ export function QuestionRenderer({ question, response, setResponse, disabled }: 
   if (type === "multiple_choice") {
     const sel = (Array.isArray(response) ? response : []) as string[];
     return (
-      <div className="flex flex-col gap-2">
+<div
+  className="flex flex-col gap-2"
+  data-question-options={question.id}
+>
         {opts.map((o) => {
           const checked = sel.map(String).includes(String(o.id));
           return (
@@ -50,16 +57,22 @@ export function QuestionRenderer({ question, response, setResponse, disabled }: 
               className="flex gap-2.5 items-start px-3 py-2.5 rounded-md border cursor-pointer"
               style={{ borderColor: checked ? "#4FA3E3" : "#29333B", background: checked ? "#1C242B" : "transparent" }}
             >
-              <input
-                type="checkbox"
-                disabled={disabled}
-                checked={checked}
-                onChange={() => {
-                  const next = checked ? sel.filter((x) => String(x) !== String(o.id)) : [...sel, String(o.id)];
-                  setResponse(next);
-                }}
-                className="mt-0.5"
-              />
+<input
+  type="checkbox"
+  disabled={disabled}
+  checked={checked}
+  onChange={() => {
+    const next = checked
+      ? sel.filter(
+          (x) => String(x) !== String(o.id)
+        )
+      : [...sel, String(o.id)];
+
+    setResponse(next);
+  }}
+  className="mt-0.5"
+  data-question-option
+/>
               <span className="text-sm">{o.text}</span>
             </label>
           );
