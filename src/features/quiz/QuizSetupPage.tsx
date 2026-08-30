@@ -27,118 +27,118 @@ interface ModeDef {
   desc: string;
 }
 
-function shuffleQuestionOptions(
-  questions: Question[]
-): Question[] {
-  return questions.map((question) => {
-    const options = question.options;
+// function shuffleQuestionOptions(
+//   questions: Question[]
+// ): Question[] {
+//   return questions.map((question) => {
+//     const options = question.options;
 
-        console.log(
-      "[OPTION DEBUG]",
-      question.id,
-      question.question_type,
-      options?.map((o) => ({
-        id: o.id,
-        is_correct: o.is_correct,
-        type: typeof o.is_correct,
-      }))
-    );
+//         console.log(
+//       "[OPTION DEBUG]",
+//       question.id,
+//       question.question_type,
+//       options?.map((o) => ({
+//         id: o.id,
+//         is_correct: o.is_correct,
+//         type: typeof o.is_correct,
+//       }))
+//     );
 
-    if (!options || options.length < 2) {
-      return question;
-    }
+//     if (!options || options.length < 2) {
+//       return question;
+//     }
 
-    if (
-      question.question_type === "ordering" ||
-      question.question_type === "matching"
-    ) {
-      return question;
-    }
+//     if (
+//       question.question_type === "ordering" ||
+//       question.question_type === "matching"
+//     ) {
+//       return question;
+//     }
 
-    // const correct = options.filter(
-    //   (option) => option.is_correct
-    // );
+//     // const correct = options.filter(
+//     //   (option) => option.is_correct
+//     // );
 
-    // const incorrect = options.filter(
-    //   (option) => !option.is_correct
-    // );
+//     // const incorrect = options.filter(
+//     //   (option) => !option.is_correct
+//     // );
 
-const isCorrect = (
-  value: unknown
-): boolean => {
-  if (typeof value === "boolean") {
-    return value;
-  }
+// const isCorrect = (
+//   value: unknown
+// ): boolean => {
+//   if (typeof value === "boolean") {
+//     return value;
+//   }
 
-  if (typeof value === "string") {
-    return (
-      value.trim().toLowerCase() ===
-      "true"
-    );
-  }
+//   if (typeof value === "string") {
+//     return (
+//       value.trim().toLowerCase() ===
+//       "true"
+//     );
+//   }
 
-  return false;
-};
+//   return false;
+// };
 
-const correct = options.filter(
-  (option) =>
-    isCorrect(
-      option.is_correct as unknown
-    )
-);
+// const correct = options.filter(
+//   (option) =>
+//     isCorrect(
+//       option.is_correct as unknown
+//     )
+// );
 
-const incorrect = options.filter(
-  (option) =>
-    !isCorrect(
-      option.is_correct as unknown
-    )
-);
+// const incorrect = options.filter(
+//   (option) =>
+//     !isCorrect(
+//       option.is_correct as unknown
+//     )
+// );
 
-    /*
-     * Exactly one correct answer:
-     * explicitly place it at a random valid position.
-     */
-    if (correct.length === 1) {
-      const shuffledIncorrect = shuffle(
-        incorrect
-      );
+//     /*
+//      * Exactly one correct answer:
+//      * explicitly place it at a random valid position.
+//      */
+//     if (correct.length === 1) {
+//       const shuffledIncorrect = shuffle(
+//         incorrect
+//       );
 
-      const targetIndex = Math.floor(
-        Math.random() * options.length
-      );
+//       const targetIndex = Math.floor(
+//         Math.random() * options.length
+//       );
 
-      const randomizedOptions =
-        shuffledIncorrect.slice();
+//       const randomizedOptions =
+//         shuffledIncorrect.slice();
 
-      randomizedOptions.splice(
-        targetIndex,
-        0,
-        correct[0]
-      );
+//       randomizedOptions.splice(
+//         targetIndex,
+//         0,
+//         correct[0]
+//       );
 
-      return {
-        ...question,
-        options: randomizedOptions,
-      };
-    }
+//       return {
+//         ...question,
+//         options: randomizedOptions,
+//       };
+//     }
 
-    /*
-     * Multiple correct answers:
-     * shuffle the whole option array.
-     */
-    if (
-      question.question_type ===
-      "multiple_choice"
-    ) {
-      return {
-        ...question,
-        options: shuffle(options),
-      };
-    }
+//     /*
+//      * Multiple correct answers:
+//      * shuffle the whole option array.
+//      */
+//     if (
+//       question.question_type ===
+//       "multiple_choice"
+//     ) {
+//       return {
+//         ...question,
+//         options: shuffle(options),
+//       };
+//     }
 
-    return question;
-  });
-}
+//     return question;
+//   });
+// }
 
 const QUIZ_MODES: ModeDef[] = [
   {
@@ -324,8 +324,7 @@ export function QuizSetupPage({
     return;
   }
 
-  const progress =
-    savedProgress;
+
 
   /*
    * The saved questions are the exact quiz snapshot,

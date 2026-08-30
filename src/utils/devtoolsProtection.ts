@@ -4,7 +4,7 @@ export function enableDevToolsProtection(): () => void {
   };
 
   const handleKeyDown = (event: KeyboardEvent) => {
-    const key = event.key.toLowerCase();
+    // const key = event.key.toLowerCase();
 
     // const blocked =
     //   event.key === "F12" ||
