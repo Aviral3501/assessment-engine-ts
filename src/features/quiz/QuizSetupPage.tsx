@@ -18,6 +18,8 @@ import {
 import { shuffle } from "@/utils/id";
 import type { QuizSetup } from "./QuizRunner";
 import { randomizeQuestionOptions } from "@/services/quizPreparation";
+import type { QuizProgress } from "@/types/quizProgress";
+
 
 interface ModeDef {
   key: QuizMode;
@@ -204,6 +206,7 @@ export function QuizSetupPage({
   const [mode, setMode] =
     useState<QuizMode>("quick");
 
+
   const [count, setCount] =
     useState(20);
 
@@ -233,6 +236,47 @@ export function QuizSetupPage({
 
   const [busy, setBusy] =
     useState(false);
+
+  const [savedProgress, setSavedProgress] =
+    useState<QuizProgress | null>(null);
+
+  const [checkingProgress, setCheckingProgress] =
+    useState(true);
+
+
+  useEffect(() => {
+  async function loadSetupData() {
+    const [
+      allQuestions,
+      allSets,
+      progress,
+    ] = await Promise.all([
+      Store.allQuestions(),
+      Store.allQuestionSets(),
+      Store.getActiveQuizProgress(),
+    ]);
+
+    setQuestions(allQuestions);
+    setSets(allSets);
+
+    setSelectedSetId(
+      (prev) =>
+        prev ||
+        (allSets.length
+          ? allSets[0].id
+          : "")
+    );
+
+    setSavedProgress(
+      progress ?? null
+    );
+
+    setCheckingProgress(false);
+  }
+
+  void loadSetupData();
+}, []);
+
 
   useEffect(() => {
     Store.allQuestions().then(setQuestions);
@@ -273,6 +317,50 @@ export function QuizSetupPage({
       ],
     [questions, category]
   );
+
+
+  async function resumeQuiz() {
+  if (!savedProgress) {
+    return;
+  }
+
+  const progress =
+    savedProgress;
+
+  /*
+   * The saved questions are the exact quiz snapshot,
+   * including randomized option positions.
+   *
+   * Do NOT randomize them again.
+   */
+  onStart({
+    mode: savedProgress.mode,
+    questions: savedProgress.questions,
+    revealMode: savedProgress.reveal_mode,
+    progress: savedProgress,
+  });
+}
+
+async function discardSavedQuiz() {
+  if (!savedProgress) {
+    return;
+  }
+
+  const confirmed =
+    window.confirm(
+      "Discard this in-progress quiz? Your completed answers already saved in the attempt history will remain."
+    );
+
+  if (!confirmed) {
+    return;
+  }
+
+  await Store.deleteQuizProgress(
+    savedProgress.quiz_session_id
+  );
+
+  setSavedProgress(null);
+}
 
   async function start() {
     setBusy(true);
@@ -435,6 +523,61 @@ onStart({
       <div className="text-lg font-bold mb-3.5">
         Start a Quiz
       </div>
+
+      {!checkingProgress &&
+  savedProgress && (
+    <div className="card p-4 mb-4">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[14px] font-bold mb-1">
+            Resume Quiz
+          </div>
+
+          <div className="text-[12px] text-textMuted">
+            {savedProgress.mode ===
+              "set"
+              ? "Question Set"
+              : "Quiz"}{" "}
+            · Question{" "}
+            {Math.min(
+              savedProgress.current_index +
+                1,
+              savedProgress.questions.length
+            )}{" "}
+            /{" "}
+            {savedProgress.questions.length}
+          </div>
+
+          <div className="text-[11px] text-textDim mt-1">
+            Last saved{" "}
+            {new Date(
+              savedProgress.updated_at
+            ).toLocaleString()}
+          </div>
+        </div>
+
+        <div className="flex gap-2 shrink-0">
+          <button
+            className="btn btn-sm"
+            onClick={() =>
+              void discardSavedQuiz()
+            }
+          >
+            Discard
+          </button>
+
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() =>
+              void resumeQuiz()
+            }
+          >
+            Resume Quiz →
+          </button>
+        </div>
+      </div>
+    </div>
+  )}
 
       <div className="grid grid-cols-2 gap-2.5 mb-5">
         {QUIZ_MODES.map((m) => (

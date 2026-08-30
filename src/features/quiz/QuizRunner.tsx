@@ -20,11 +20,14 @@ import {
   DifficultyBadge,
 } from "@/components/Badges";
 import { CodeBlock } from "@/components/CodeBlock";
+import type { QuizProgress } from "@/types/quizProgress";
+
 
 export interface QuizSetup {
   mode: QuizMode;
   questions: Question[];
   revealMode: AnswerRevealMode;
+  progress?: QuizProgress;
 }
 
 interface Props {
@@ -33,6 +36,7 @@ interface Props {
     sessionRecord: QuizSession,
     attempts: Attempt[]
   ) => void;
+  onPause?: () => void;
 }
 
 type QuizBehavior =
@@ -73,19 +77,35 @@ function initialQuizBehavior(
 export function QuizRunner({
   session,
   onFinish,
+  onPause,
 }: Props) {
-  const [idx, setIdx] = useState(0);
+  const savedProgress = session.progress;
+
+  const [idx, setIdx] = useState(
+    savedProgress?.current_index ?? 0
+  );
 
   const [responses, setResponses] =
     useState<
       Record<string, QuestionResponse>
-    >({});
+    >(
+      savedProgress?.responses ?? {}
+    );
 
   const [revealed, setRevealed] =
-    useState<Record<string, boolean>>({});
+    useState<
+      Record<string, boolean>
+    >(
+      savedProgress?.revealed ?? {}
+    );
 
   const [attemptsLog, setAttemptsLog] =
     useState<Attempt[]>([]);
+
+  const [restoring, setRestoring] =
+    useState(
+      !!savedProgress
+    );
 
   const [bookmarks, setBookmarks] =
     useState<Set<string>>(new Set());
@@ -97,24 +117,40 @@ export function QuizRunner({
 
   const [quizBehavior, setQuizBehavior] =
     useState<QuizBehavior>(() =>
+      savedProgress?.quiz_behavior ??
       initialQuizBehavior(
         session.revealMode
       )
     );
 
   const [showExplanation, setShowExplanation] =
-    useState(true);
+    useState(
+      savedProgress?.show_explanation ??
+        true
+    );
 
-  const [startTime] =
-    useState(Date.now());
 
-  const sessionIdRef = useRef(
+
+const [startTime] = useState(() =>
+  savedProgress
+    ? Date.now() -
+      savedProgress.elapsed_seconds *
+        1000
+    : Date.now()
+);
+
+const sessionIdRef = useRef(
+  savedProgress?.quiz_session_id ??
     uid("qs")
-  );
+);
 
-  const qStartRef = useRef(
-    Date.now()
-  );
+const qStartRef = useRef(
+  savedProgress
+    ? new Date(
+        savedProgress.question_started_at
+      ).getTime()
+    : Date.now()
+);
 
   useEffect(() => {
     Store.allBookmarks().then((bm) =>
@@ -128,9 +164,45 @@ export function QuizRunner({
     );
   }, []);
 
-  useEffect(() => {
-    qStartRef.current = Date.now();
-  }, [idx]);
+useEffect(() => {
+  if (restoring) {
+    return;
+  }
+
+  qStartRef.current = Date.now();
+}, [idx, restoring]);
+
+useEffect(() => {
+  async function restoreProgress() {
+    if (!savedProgress) {
+      setRestoring(false);
+      return;
+    }
+
+    const attempts =
+      await Store.allAttempts();
+
+    const restoredAttempts =
+      attempts.filter(
+        (attempt) =>
+          attempt.quiz_session_id ===
+          savedProgress.quiz_session_id
+      );
+
+    setAttemptsLog(
+      restoredAttempts
+    );
+
+    qStartRef.current =
+      new Date(
+        savedProgress.question_started_at
+      ).getTime();
+
+    setRestoring(false);
+  }
+
+  void restoreProgress();
+}, []);
 
   const q = session.questions[idx];
   const total = session.questions.length;
@@ -142,6 +214,10 @@ export function QuizRunner({
     attemptsLog.find(
       (a) => a.question_id === q.id
     );
+
+//   if (restoring) {
+//   return null;
+// }
 
   
 const answerPositionStats = (() => {
@@ -253,6 +329,82 @@ const answerPositionStats = (() => {
     }));
   }
 
+    async function saveQuizProgress(
+    paused = false
+  ): Promise<void> {
+    const progress: QuizProgress = {
+      quiz_session_id:
+        sessionIdRef.current,
+
+      started_at:
+        new Date(
+          startTime
+        ).toISOString(),
+
+      updated_at: nowISO(),
+
+      current_index: idx,
+
+      /*
+       * Save the exact questions currently being
+       * used by this quiz, including their current
+       * randomized option order.
+       */
+      questions: session.questions,
+
+      responses,
+
+      revealed,
+
+      attempt_ids:
+        attemptsLog
+          .map(
+            (attempt) =>
+              attempt.attempt_id
+          )
+          .filter(
+            (
+              id
+            ): id is number =>
+              id !== undefined
+          ),
+
+      quiz_behavior:
+        quizBehavior,
+
+      show_explanation:
+        showExplanation,
+
+      reveal_mode:
+        session.revealMode,
+
+      mode: session.mode,
+
+      question_started_at:
+        qStartRef.current
+          ? new Date(
+              qStartRef.current
+            ).toISOString()
+          : nowISO(),
+
+      elapsed_seconds:
+        Math.max(
+          0,
+          Math.round(
+            (Date.now() -
+              startTime) /
+              1000
+          )
+        ),
+
+      paused,
+    };
+
+    await Store.saveQuizProgress(
+      progress
+    );
+  }
+
   /**
    * Records the current question when using
    * assessment mode and navigating away from it.
@@ -345,37 +497,163 @@ const answerPositionStats = (() => {
         timeTakenSec: timeTaken,
       });
 
-    setAttemptsLog((l) => [
-      ...l,
+    const nextAttempts = [
+      ...attemptsLog,
       attempt,
-    ]);
+    ];
 
-    setRevealed((r) => ({
-      ...r,
+    const nextRevealed = {
+      ...revealed,
       [q.id]: true,
-    }));
+    };
+
+    setAttemptsLog(nextAttempts);
+    setRevealed(nextRevealed);
+
+    await Store.saveQuizProgress({
+      quiz_session_id:
+        sessionIdRef.current,
+
+      started_at:
+        new Date(
+          startTime
+        ).toISOString(),
+
+      updated_at: nowISO(),
+
+      current_index: idx,
+
+      questions: session.questions,
+
+      responses,
+
+      revealed: nextRevealed,
+
+      attempt_ids:
+        nextAttempts
+          .map(
+            (a) => a.attempt_id
+          )
+          .filter(
+            (
+              id
+            ): id is number =>
+              id !== undefined
+          ),
+
+      quiz_behavior:
+        quizBehavior,
+
+      show_explanation:
+        showExplanation,
+
+      reveal_mode:
+        session.revealMode,
+
+      mode: session.mode,
+
+      question_started_at:
+        new Date(
+          qStartRef.current
+        ).toISOString(),
+
+      elapsed_seconds:
+        Math.max(
+          0,
+          Math.round(
+            (Date.now() -
+              startTime) /
+            1000
+          )
+        ),
+
+      paused: false,
+    });
 
     return attempt;
   }
 
-  async function goTo(
-    newIdx: number
+async function goTo(
+  newIdx: number
+) {
+  if (
+    newIdx < 0 ||
+    newIdx >= total ||
+    newIdx === idx
   ) {
-    if (
-      newIdx < 0 ||
-      newIdx >= total ||
-      newIdx === idx
-    ) {
-      return;
-    }
-
-    await recordAssessmentIfNeeded(
-      q,
-      response
-    );
-
-    setIdx(newIdx);
+    return;
   }
+
+  await recordAssessmentIfNeeded(
+    q,
+    response
+  );
+
+  setIdx(newIdx);
+
+  /*
+   * Save the destination question so that
+   * Resume returns to where the learner navigated.
+   */
+  await Store.saveQuizProgress({
+    quiz_session_id:
+      sessionIdRef.current,
+
+    started_at:
+      new Date(
+        startTime
+      ).toISOString(),
+
+    updated_at: nowISO(),
+
+    current_index: newIdx,
+
+    questions:
+      session.questions,
+
+    responses,
+
+    revealed,
+
+    attempt_ids:
+      attemptsLog
+        .map(
+          (a) => a.attempt_id
+        )
+        .filter(
+          (
+            id
+          ): id is number =>
+            id !== undefined
+        ),
+
+    quiz_behavior:
+      quizBehavior,
+
+    show_explanation:
+      showExplanation,
+
+    reveal_mode:
+      session.revealMode,
+
+    mode: session.mode,
+
+    question_started_at:
+      nowISO(),
+
+    elapsed_seconds:
+      Math.max(
+        0,
+        Math.round(
+          (Date.now() -
+            startTime) /
+            1000
+        )
+      ),
+
+    paused: false,
+  });
+}
 
   function goPrev() {
     void goTo(idx - 1);
@@ -459,9 +737,22 @@ const answerPositionStats = (() => {
     await checkAnswer();
   }
 
+  async function pauseQuiz() {
+    await saveQuizProgress(true);
+
+    if (onPause) {
+      onPause();
+    }
+  }
+
   async function finish(
     finalAttempts: Attempt[] = attemptsLog
   ) {
+
+    await Store.deleteQuizProgress(
+  sessionIdRef.current
+);
+    
     const correct =
       finalAttempts.filter(
         (a) =>
@@ -752,6 +1043,16 @@ const answerPositionStats = (() => {
             title="Toggle question queue"
           >
             ▤ Queue
+          </button>
+
+          <button
+            className="btn btn-sm"
+            onClick={() =>
+              void pauseQuiz()
+            }
+            title="Pause quiz"
+          >
+            ⏸ Pause
           </button>
 
           <button

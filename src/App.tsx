@@ -131,6 +131,11 @@ export default function App() {
     setPage("quiz-run");
   }
 
+  function pauseQuiz() {
+  setActiveSession(null);
+  setPage("quiz-setup");
+}
+
   function finishQuiz(
     sessionRecord: QuizSession,
     attempts: Attempt[]
@@ -206,6 +211,7 @@ export default function App() {
       <QuizRunner
         session={activeSession}
         onFinish={finishQuiz}
+        onPause={pauseQuiz}
       />
     ) : (
       <QuizSetupPage

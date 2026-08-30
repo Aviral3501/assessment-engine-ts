@@ -1,7 +1,10 @@
 import Dexie, { type Table } from "dexie";
 
 import type { Question } from "@/types/question";
-import type { Attempt, QuizSession } from "@/types/attempt";
+import type {
+  Attempt,
+  QuizSession,
+} from "@/types/attempt";
 import type { LearningState } from "@/types/learning";
 import type {
   Topic,
@@ -10,17 +13,43 @@ import type {
   UserSettingRow,
 } from "@/types/topic";
 import type { QuestionSet } from "@/types/questionSet";
+import type { QuizProgress } from "@/types/quizProgress";
 
 export class QuizAssessmentDB extends Dexie {
   questions!: Table<Question, string>;
+
   attempts!: Table<Attempt, number>;
-  quiz_sessions!: Table<QuizSession, string>;
-  learning_states!: Table<LearningState, string>;
+
+  quiz_sessions!: Table<
+    QuizSession,
+    string
+  >;
+
+  learning_states!: Table<
+    LearningState,
+    string
+  >;
+
   topics!: Table<Topic, string>;
+
   bookmarks!: Table<Bookmark, string>;
+
   flags!: Table<Flag, number>;
-  user_settings!: Table<UserSettingRow, string>;
-  question_sets!: Table<QuestionSet, string>;
+
+  user_settings!: Table<
+    UserSettingRow,
+    string
+  >;
+
+  question_sets!: Table<
+    QuestionSet,
+    string
+  >;
+
+  quiz_progress!: Table<
+    QuizProgress,
+    string
+  >;
 
   constructor() {
     super("QuizAssessmentDB");
@@ -52,9 +81,16 @@ export class QuizAssessmentDB extends Dexie {
     });
 
     this.version(2).stores({
-      question_sets: "id, imported_at",
+      question_sets:
+        "id, imported_at",
+    });
+
+    this.version(3).stores({
+      quiz_progress:
+        "quiz_session_id, updated_at, paused",
     });
   }
 }
 
-export const db = new QuizAssessmentDB();
+export const db =
+  new QuizAssessmentDB();

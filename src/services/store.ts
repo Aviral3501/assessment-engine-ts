@@ -11,6 +11,7 @@ import {
 import { selectDailyQuiz } from "./dailyQuiz";
 import { buildQuestionSet } from "./questionSet";
 import { nowISO, topicKeyOf, uid } from "@/utils/id";
+import type { QuizProgress } from "@/types/quizProgress";
 
 export type DuplicateStrategy = "skip" | "replace" | "keep";
 
@@ -71,6 +72,75 @@ export const Store = {
 
   async allFlags() {
     return db.flags.toArray();
+  },
+
+    /**
+   * Saves the current in-progress quiz state.
+   *
+   * This only stores/resaves the quiz progress record.
+   * It does not modify questions, attempts, learning states,
+   * question sets, or any other existing data.
+   */
+  async saveQuizProgress(
+    progress: QuizProgress
+  ): Promise<void> {
+    await db.quiz_progress.put(progress);
+  },
+
+  /**
+   * Gets a specific in-progress quiz.
+   */
+  async getQuizProgress(
+    quiz_session_id: string
+  ): Promise<QuizProgress | undefined> {
+    return db.quiz_progress.get(
+      quiz_session_id
+    );
+  },
+
+  /**
+   * Returns all in-progress quizzes, newest first.
+   */
+  async allQuizProgress(): Promise<QuizProgress[]> {
+    const progress =
+      await db.quiz_progress.toArray();
+
+    return progress.sort((a, b) =>
+      b.updated_at.localeCompare(
+        a.updated_at
+      )
+    );
+  },
+
+  /**
+   * Returns the most recently updated in-progress
+   * quiz, if one exists.
+   */
+  async getActiveQuizProgress(): Promise<
+    QuizProgress | undefined
+  > {
+    const progress =
+      await this.allQuizProgress();
+
+    return progress[0];
+  },
+
+  /**
+   * Deletes one saved in-progress quiz.
+   */
+  async deleteQuizProgress(
+    quiz_session_id: string
+  ): Promise<void> {
+    await db.quiz_progress.delete(
+      quiz_session_id
+    );
+  },
+
+  /**
+   * Deletes all saved in-progress quizzes.
+   */
+  async clearAllQuizProgress(): Promise<void> {
+    await db.quiz_progress.clear();
   },
 
   async createQuestionSet(
@@ -391,6 +461,7 @@ export const Store = {
         db.flags,
         db.user_settings,
         db.question_sets,
+        db.quiz_progress,
       ],
       async () => {
         await Promise.all([
@@ -403,6 +474,7 @@ export const Store = {
           db.flags.clear(),
           db.user_settings.clear(),
           db.question_sets.clear(),
+          db.quiz_progress.clear(),
         ]);
       }
     );
