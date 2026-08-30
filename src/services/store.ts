@@ -2,7 +2,6 @@ import { db } from "@/db/db";
 import type { Question, QuestionResponse } from "@/types/question";
 import type { Attempt } from "@/types/attempt";
 import type { Topic, TopicStatus, FlagReason } from "@/types/topic";
-import type { QuestionSet } from "@/types/questionSet";
 import { scoreAttempt } from "./scoring";
 import {
   defaultLearningState,
@@ -12,6 +11,10 @@ import { selectDailyQuiz } from "./dailyQuiz";
 import { buildQuestionSet } from "./questionSet";
 import { nowISO, topicKeyOf, uid } from "@/utils/id";
 import type { QuizProgress } from "@/types/quizProgress";
+import type {
+  QuestionSet,
+  QuestionSetFolder,
+} from "@/types/questionSet";
 
 export type DuplicateStrategy = "skip" | "replace" | "keep";
 
@@ -72,6 +75,271 @@ export const Store = {
 
   async allFlags() {
     return db.flags.toArray();
+  },
+
+    /**
+   * Returns all Question Set folders, ordered by creation time.
+   */
+  async allQuestionSetFolders(): Promise<
+    QuestionSetFolder[]
+  > {
+    const folders =
+      await db.question_set_folders.toArray();
+
+    return folders.sort((a, b) =>
+      a.created_at.localeCompare(
+        b.created_at
+      )
+    );
+  },
+
+  /**
+   * Gets a single folder by ID.
+   */
+  async getQuestionSetFolder(
+    id: string
+  ): Promise<QuestionSetFolder | undefined> {
+    return db.question_set_folders.get(id);
+  },
+
+  /**
+   * Creates a folder.
+   *
+   * parent_id === null means the folder is
+   * directly under the root.
+   */
+  async createQuestionSetFolder(
+    name: string,
+    parentId: string | null = null
+  ): Promise<QuestionSetFolder> {
+    const trimmed = name.trim();
+
+    if (!trimmed) {
+      throw new Error(
+        "Folder name cannot be empty."
+      );
+    }
+
+    if (parentId) {
+      const parent =
+        await db.question_set_folders.get(
+          parentId
+        );
+
+      if (!parent) {
+        throw new Error(
+          "Parent folder does not exist."
+        );
+      }
+    }
+
+    const folder: QuestionSetFolder = {
+      id: uid("folder"),
+      name: trimmed,
+      parent_id: parentId,
+      created_at: nowISO(),
+    };
+
+    await db.question_set_folders.put(
+      folder
+    );
+
+    return folder;
+  },
+
+  /**
+   * Renames an existing folder.
+   */
+  async renameQuestionSetFolder(
+    id: string,
+    name: string
+  ): Promise<void> {
+    const trimmed = name.trim();
+
+    if (!trimmed) {
+      throw new Error(
+        "Folder name cannot be empty."
+      );
+    }
+
+    const folder =
+      await db.question_set_folders.get(id);
+
+    if (!folder) {
+      throw new Error(
+        "Folder does not exist."
+      );
+    }
+
+    folder.name = trimmed;
+
+    await db.question_set_folders.put(
+      folder
+    );
+  },
+
+  /**
+   * Moves a folder to another folder.
+   *
+   * parentId === null means Root.
+   *
+   * Prevents moving a folder into itself or
+   * into one of its own descendants.
+   */
+  async moveQuestionSetFolder(
+    id: string,
+    parentId: string | null
+  ): Promise<void> {
+    const folder =
+      await db.question_set_folders.get(id);
+
+    if (!folder) {
+      throw new Error(
+        "Folder does not exist."
+      );
+    }
+
+    if (parentId === id) {
+      throw new Error(
+        "A folder cannot be moved into itself."
+      );
+    }
+
+    if (parentId) {
+      const parent =
+        await db.question_set_folders.get(
+          parentId
+        );
+
+      if (!parent) {
+        throw new Error(
+          "Destination folder does not exist."
+        );
+      }
+
+      let currentId: string | null =
+        parentId;
+
+      while (currentId) {
+        if (currentId === id) {
+          throw new Error(
+            "A folder cannot be moved into one of its descendants."
+          );
+        }
+
+const current: QuestionSetFolder | undefined =
+  await db.question_set_folders.get(
+    currentId
+  );
+
+currentId =
+  current?.parent_id ?? null;
+      }
+    }
+
+    folder.parent_id = parentId;
+
+    await db.question_set_folders.put(
+      folder
+    );
+  },
+
+  /**
+   * Moves a Question Set to a folder.
+   *
+   * folderId === null means Root.
+   */
+  async moveQuestionSetToFolder(
+    setId: string,
+    folderId: string | null
+  ): Promise<void> {
+    const set =
+      await db.question_sets.get(setId);
+
+    if (!set) {
+      throw new Error(
+        "Question set does not exist."
+      );
+    }
+
+    if (folderId) {
+      const folder =
+        await db.question_set_folders.get(
+          folderId
+        );
+
+      if (!folder) {
+        throw new Error(
+          "Destination folder does not exist."
+        );
+      }
+    }
+
+    set.folder_id = folderId;
+
+    await db.question_sets.put(set);
+  },
+
+  /**
+   * Deletes a folder without deleting any sets.
+   *
+   * All sets directly in the folder are moved
+   * to Root.
+   *
+   * Child folders are also moved to Root so no
+   * folder becomes orphaned.
+   */
+  async deleteQuestionSetFolder(
+    id: string
+  ): Promise<void> {
+    const folder =
+      await db.question_set_folders.get(id);
+
+    if (!folder) {
+      return;
+    }
+
+    await db.transaction(
+      "rw",
+      db.question_set_folders,
+      db.question_sets,
+      async () => {
+        const [sets, children] =
+          await Promise.all([
+            db.question_sets
+              .where("folder_id")
+              .equals(id)
+              .toArray(),
+
+            db.question_set_folders
+              .where("parent_id")
+              .equals(id)
+              .toArray(),
+          ]);
+
+        await Promise.all(
+          sets.map((set) =>
+            db.question_sets.put({
+              ...set,
+              folder_id: null,
+            })
+          )
+        );
+
+        await Promise.all(
+          children.map((child) =>
+            db.question_set_folders.put({
+              ...child,
+              parent_id: null,
+            })
+          )
+        );
+
+        await db.question_set_folders.delete(
+          id
+        );
+      }
+    );
   },
 
     /**

@@ -12,7 +12,10 @@ import type {
   Flag,
   UserSettingRow,
 } from "@/types/topic";
-import type { QuestionSet } from "@/types/questionSet";
+import type {
+  QuestionSet,
+  QuestionSetFolder,
+} from "@/types/questionSet";
 import type { QuizProgress } from "@/types/quizProgress";
 
 export class QuizAssessmentDB extends Dexie {
@@ -48,6 +51,11 @@ export class QuizAssessmentDB extends Dexie {
 
   quiz_progress!: Table<
     QuizProgress,
+    string
+  >;
+
+  question_set_folders!: Table<
+    QuestionSetFolder,
     string
   >;
 
@@ -89,6 +97,22 @@ export class QuizAssessmentDB extends Dexie {
       quiz_progress:
         "quiz_session_id, updated_at, paused",
     });
+
+    /*
+     * Version 4:
+     * Adds nested folders for Question Sets.
+     *
+     * Existing question sets are untouched.
+     * Existing sets without folder_id are treated
+     * as belonging to the root.
+     */
+this.version(4).stores({
+  question_sets:
+    "id, imported_at, folder_id",
+
+  question_set_folders:
+    "id, parent_id, created_at",
+});
   }
 }
 
