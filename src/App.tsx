@@ -21,6 +21,7 @@ import type {
   QuizSession,
 } from "@/types/attempt";
 import { enableDevToolsProtection } from "@/utils/devtoolsProtection";
+import { AuthGate } from "./components/AuthGate";
 
 export type PageKey =
   | "dashboard"
@@ -40,7 +41,7 @@ interface SessionResult {
   attempts: Attempt[];
 }
 
-export default function App() {
+export  function AppContent() {
   const [page, setPage] =
     useState<PageKey>("dashboard");
 
@@ -293,5 +294,13 @@ export default function App() {
         {content}
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthGate>
+      <AppContent />
+    </AuthGate>
   );
 }
