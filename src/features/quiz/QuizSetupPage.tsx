@@ -237,8 +237,8 @@ export function QuizSetupPage({
   const [busy, setBusy] =
     useState(false);
 
-  const [savedProgress, setSavedProgress] =
-    useState<QuizProgress | null>(null);
+const [savedProgresses, setSavedProgresses] =
+  useState<QuizProgress[]>([]);
 
   const [checkingProgress, setCheckingProgress] =
     useState(true);
@@ -246,15 +246,15 @@ export function QuizSetupPage({
 
   useEffect(() => {
   async function loadSetupData() {
-    const [
-      allQuestions,
-      allSets,
-      progress,
-    ] = await Promise.all([
-      Store.allQuestions(),
-      Store.allQuestionSets(),
-      Store.getActiveQuizProgress(),
-    ]);
+const [
+  allQuestions,
+  allSets,
+  progress,
+] = await Promise.all([
+  Store.allQuestions(),
+  Store.allQuestionSets(),
+  Store.allQuizProgress(),
+]);
 
     setQuestions(allQuestions);
     setSets(allSets);
@@ -267,9 +267,7 @@ export function QuizSetupPage({
           : "")
     );
 
-    setSavedProgress(
-      progress ?? null
-    );
+setSavedProgresses(progress);
 
     setCheckingProgress(false);
   }
@@ -319,32 +317,21 @@ export function QuizSetupPage({
   );
 
 
-  async function resumeQuiz() {
-  if (!savedProgress) {
-    return;
-  }
-
-
-
-  /*
-   * The saved questions are the exact quiz snapshot,
-   * including randomized option positions.
-   *
-   * Do NOT randomize them again.
-   */
+async function resumeQuiz(
+  progress: QuizProgress
+) {
   onStart({
-    mode: savedProgress.mode,
-    questions: savedProgress.questions,
-    revealMode: savedProgress.reveal_mode,
-    progress: savedProgress,
+    mode: progress.mode,
+    questions: progress.questions,
+    revealMode: progress.reveal_mode,
+    progress,
   });
 }
 
-async function discardSavedQuiz() {
-  if (!savedProgress) {
-    return;
-  }
 
+async function discardSavedQuiz(
+  progress: QuizProgress
+) {
   const confirmed =
     window.confirm(
       "Discard this in-progress quiz? Your completed answers already saved in the attempt history will remain."
@@ -355,10 +342,51 @@ async function discardSavedQuiz() {
   }
 
   await Store.deleteQuizProgress(
-    savedProgress.quiz_session_id
+    progress.quiz_session_id
   );
 
-  setSavedProgress(null);
+  setSavedProgresses((current) =>
+    current.filter(
+      (item) =>
+        item.quiz_session_id !==
+        progress.quiz_session_id
+    )
+  );
+}
+
+function getProgressName(
+  progress: QuizProgress
+): string {
+  if (progress.mode === "set") {
+    const matchingSet = sets.find((set) => {
+      if (
+        set.question_ids.length !==
+        progress.questions.length
+      ) {
+        return false;
+      }
+
+      const savedIds = new Set(
+        progress.questions.map((q) => q.id)
+      );
+
+      return set.question_ids.every((id) =>
+        savedIds.has(id)
+      );
+    });
+
+    if (matchingSet) {
+      return matchingSet.name;
+    }
+
+    return "Question Set";
+  }
+
+  return (
+    QUIZ_MODES.find(
+      (mode) => mode.key === progress.mode
+    )?.label ?? "Quiz"
+  );
 }
 
   async function start() {
@@ -522,58 +550,67 @@ onStart({
       <div className="text-lg font-bold mb-3.5">
         Start a Quiz
       </div>
-
-      {!checkingProgress &&
-  savedProgress && (
+{!checkingProgress &&
+  savedProgresses.length > 0 && (
     <div className="card p-4 mb-4">
-      <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <div className="text-[14px] font-bold mb-1">
-            Resume Quiz
-          </div>
+      <div className="text-[14px] font-bold mb-3">
+        Resume Quizzes
+      </div>
 
-          <div className="text-[12px] text-textMuted">
-            {savedProgress.mode ===
-              "set"
-              ? "Question Set"
-              : "Quiz"}{" "}
-            · Question{" "}
-            {Math.min(
-              savedProgress.current_index +
-                1,
-              savedProgress.questions.length
-            )}{" "}
-            /{" "}
-            {savedProgress.questions.length}
-          </div>
-
-          <div className="text-[11px] text-textDim mt-1">
-            Last saved{" "}
-            {new Date(
-              savedProgress.updated_at
-            ).toLocaleString()}
-          </div>
-        </div>
-
-        <div className="flex gap-2 shrink-0">
-          <button
-            className="btn btn-sm"
-            onClick={() =>
-              void discardSavedQuiz()
-            }
+      <div className="space-y-2.5">
+        {savedProgresses.map((progress) => (
+          <div
+            key={progress.quiz_session_id}
+            className="border border-border rounded-lg p-3"
           >
-            Discard
-          </button>
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-[13px] font-bold mb-1 truncate">
+                  {getProgressName(progress)}
+                </div>
 
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() =>
-              void resumeQuiz()
-            }
-          >
-            Resume Quiz →
-          </button>
-        </div>
+                <div className="text-[12px] text-textMuted">
+                  {progress.mode === "set"
+                    ? "Question Set"
+                    : "Quiz"}{" "}
+                  · Question{" "}
+                  {Math.min(
+                    progress.current_index + 1,
+                    progress.questions.length
+                  )}{" "}
+                  / {progress.questions.length}
+                </div>
+
+                <div className="text-[11px] text-textDim mt-1">
+                  Last saved{" "}
+                  {new Date(
+                    progress.updated_at
+                  ).toLocaleString()}
+                </div>
+              </div>
+
+              <div className="flex gap-2 shrink-0">
+                <button
+                  className="btn btn-sm"
+                  onClick={() =>
+                    void discardSavedQuiz(progress)
+                  }
+                >
+                  Discard
+                </button>
+
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() =>
+                    void resumeQuiz(progress)
+                  }
+                >
+                  Resume →
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )}

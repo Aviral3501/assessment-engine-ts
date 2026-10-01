@@ -137,6 +137,9 @@ export function SetsPage({
     });
   }
 
+
+
+
   async function removeSet(
     set: QuestionSet
   ) {
@@ -154,6 +157,35 @@ export function SetsPage({
 
     await load();
   }
+
+
+    async function renameSet(
+  set: QuestionSet
+) {
+  const name = window.prompt(
+    "New set name:",
+    set.name
+  );
+
+  if (!name?.trim()) {
+    return;
+  }
+
+  try {
+    await Store.renameQuestionSet(
+      set.id,
+      name
+    );
+
+    await load();
+  } catch (error) {
+    window.alert(
+      error instanceof Error
+        ? error.message
+        : "Unable to rename set."
+    );
+  }
+}
 
   function toggleFolder(
     folderId: string
