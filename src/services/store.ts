@@ -441,6 +441,32 @@ currentId =
     return db.question_sets.get(id);
   },
 
+  async renameQuestionSet(
+  id: string,
+  name: string
+): Promise<void> {
+  const trimmed = name.trim();
+
+  if (!trimmed) {
+    throw new Error(
+      "Set name cannot be empty."
+    );
+  }
+
+  const set =
+    await db.question_sets.get(id);
+
+  if (!set) {
+    throw new Error(
+      "Question set does not exist."
+    );
+  }
+
+  set.name = trimmed;
+
+  await db.question_sets.put(set);
+},
+
   async deleteQuestionSet(id: string): Promise<void> {
     await db.question_sets.delete(id);
   },

@@ -583,6 +583,13 @@ export function SetsPage({
           </div>
         </div>
 
+        <button
+  className="btn btn-sm"
+  onClick={() => void renameSet(set)}
+>
+  Rename
+</button>
+
         <div className="flex gap-2 shrink-0 flex-wrap justify-end">
           <button
             className="btn btn-sm"
